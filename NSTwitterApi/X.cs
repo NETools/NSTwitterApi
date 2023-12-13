@@ -665,7 +665,7 @@ namespace NSTwitterApi
 			}
 		}
 
-		public async Task<string> ResolveScreenName(string restId)
+		private async Task<string> ResolveScreenName(string restId)
 		{
 			string api = $"https://api.twitter.com/1.1/users/show.json?user_id={restId}";
 			var response = await _client.GetAsync(api);
