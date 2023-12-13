@@ -5,7 +5,7 @@
 This is a .NET twitter api client allowing to interact with twitter as if being on the webpage by emulating the fetch-calls.
 
 ## How does it work?
-It bypasses the api routine by providing the auth0 cookie appearing to twitter as if the user is logged in.
+It bypasses the api routine by providing the `auth_token` cookie appearing to twitter as if the user is logged in.
 
 ## Examples?
 
