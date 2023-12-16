@@ -3,7 +3,7 @@ using NSTwitterApi;
 using NSTwitterApi.Contracts;
 using NSTwitterApi.Models.Api;
 
-using var api = new X("auth0")
+using var api = new X("auth_token")
 {
 	CacheReader = (id) =>
 {
@@ -25,7 +25,10 @@ async void Api_Notification(INotificationData data, NotificationHandler handler)
 var apiResult = await api.StartSession();
 
 if (apiResult.ApiStatus != ApiStatusCode.Ok)
+{
+	Console.WriteLine(apiResult.Data);
 	return;
+}
 
 Console.WriteLine(api);
 Console.ReadLine();

@@ -18,6 +18,6 @@ namespace NSTwitterApi.Models.Api
     {
         public HttpStatusCode HttpStatusCode { get; set; }
         public ApiStatusCode ApiStatus { get; set; }
-        public string? Description { get; set; }
+        public string? Data { get; set; }
     }
 }

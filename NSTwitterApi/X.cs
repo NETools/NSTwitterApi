@@ -96,7 +96,7 @@ namespace NSTwitterApi
 			NotificationEnabled = enableNotification;
 		}
 
-		public async void HandleNotification(object? sender, ElapsedEventArgs e)
+		private async void HandleNotification(object? sender, ElapsedEventArgs e)
 		{
 			if (!NotificationEnabled)
 				return;
@@ -158,7 +158,7 @@ namespace NSTwitterApi
 						break;
 				}
 
-				tweetNotification.ScreenName = await ResolveScreenName(tweetNotification.ResponderId);
+				tweetNotification.ScreenName = await ResolveRestId(tweetNotification.ResponderId);
 
 				var notificationHandler = new NotificationHandler(this, notification.CursorTop);
 				Notification?.Invoke(tweetNotification, notificationHandler);
@@ -309,8 +309,8 @@ namespace NSTwitterApi
 		/// <returns><see cref="IAsyncEnumerable{T}"/> of tweets (text, id)</returns>
 		public IAsyncEnumerable<string?> UserLikes(int count)
 		{
-			return RetrieveTweets(count, null, "BZpa3joi5mv2Rp14jC7y3A/Likes");
-		} 
+			return RetrieveTweets(count, RestId, false, "BZpa3joi5mv2Rp14jC7y3A/Likes");
+		}
 
 		/// <summary>
 		/// Get's specified amount of tweets 
@@ -319,10 +319,20 @@ namespace NSTwitterApi
 		/// <returns><see cref="IAsyncEnumerable{T}"/> of tweets (text, id)</returns>
 		public IAsyncEnumerable<string?> UserTweetsAndReplies(int count)
 		{
-			return RetrieveTweets(count, RestId, "YlkSUg0mRBx7-EkxCvc-bw/UserTweetsAndReplies");
-        }
+			return RetrieveTweets(count, RestId, true, "YlkSUg0mRBx7-EkxCvc-bw/UserTweetsAndReplies");
+		}
 
-		private async IAsyncEnumerable<string?> RetrieveTweets(int count, string? restId, string apiCall)
+		/// <summary>
+		/// Get's specified amount of tweets 
+		/// </summary>
+		/// <param name="count">Amount of tweets to obtain</param>
+		/// <returns><see cref="IAsyncEnumerable{T}"/> of tweets (text, id)</returns>
+		public IAsyncEnumerable<string?> UserTweetsAndReplies(string restId, int count)
+		{
+			return RetrieveTweets(count, restId, true, "YlkSUg0mRBx7-EkxCvc-bw/UserTweetsAndReplies");
+		}
+
+		private async IAsyncEnumerable<string?> RetrieveTweets(int count, string restId, bool compareRestIds, string apiCall)
 		{
 			CheckValidity();
 			int totalTweets = 0;
@@ -330,7 +340,7 @@ namespace NSTwitterApi
 
 			var variables = new UrlVariables()
 			{
-				UserId = RestId
+				UserId = restId
 			};
 			var features = new UrlFeatures();
 
@@ -363,7 +373,7 @@ namespace NSTwitterApi
 				var errorNode = CheckForErrors(baseNode);
 				if (errorNode.ApiStatus == ApiStatusCode.Failed)
 				{
-					Logger($"[ERROR] {errorNode.Description}");
+					Logger($"[ERROR] {errorNode.Data}");
 					yield break;
 				}
 
@@ -389,7 +399,7 @@ namespace NSTwitterApi
 							var contentType = entry["content"]["entryType"].GetValue<string>();
 							if (contentType == "TimelineTimelineItem")
 							{
-								var result = ExtractTweetId(entry["content"]["itemContent"], restId);
+								var result = ExtractTweetId(entry["content"]["itemContent"], restId, compareRestIds);
 								if (result != null)
 								{
 									totalTweets++;
@@ -403,7 +413,7 @@ namespace NSTwitterApi
 								{
 									if (item["item"]["itemContent"]["itemType"].GetValue<string>() == "TimelineTweet")
 									{
-										var result = ExtractTweetId(item["item"]["itemContent"], restId);
+										var result = ExtractTweetId(item["item"]["itemContent"], restId, compareRestIds);
 										if (result != null)
 										{
 											totalTweets++;
@@ -440,7 +450,7 @@ namespace NSTwitterApi
 			var initResult = await InitUpload(media.Length, mediaType, mediaCategory, additionalQuery);
 			if (initResult.ApiStatus == ApiStatusCode.Ok)
 			{
-				var mediaId = initResult.Description;
+				var mediaId = initResult.Data;
 				int segment = 0;
 				var slices = Toolkit.SliceArray(media, 999_999);
 				foreach (var slice in slices)
@@ -450,7 +460,7 @@ namespace NSTwitterApi
 					{
 						apiResponse.ApiStatus = ApiStatusCode.Failed;
 						apiResponse.HttpStatusCode = appendResult.HttpStatusCode;
-						apiResponse.Description = $"Failed to append segment {segment}";
+						apiResponse.Data = $"Failed to append segment {segment}";
 						return apiResponse;
 					}
 					segment++;
@@ -460,19 +470,19 @@ namespace NSTwitterApi
 				if (finalizeResult.ApiStatus == ApiStatusCode.Ok)
 				{
 					apiResponse.ApiStatus = ApiStatusCode.Ok;
-					apiResponse.Description = finalizeResult.Description;
+					apiResponse.Data = finalizeResult.Data;
 				}
 				else
 				{
 					apiResponse.ApiStatus = ApiStatusCode.Failed;
-					apiResponse.Description = "Failed to finalize upload.";
+					apiResponse.Data = "Failed to finalize upload.";
 				}
 
 			}
 			else
 			{
 				apiResponse.ApiStatus = ApiStatusCode.Failed;
-				apiResponse.Description = "Failed to init media.";
+				apiResponse.Data = "Failed to init media.";
 			}
 
 			return apiResponse;
@@ -514,7 +524,7 @@ namespace NSTwitterApi
 				var statusApiResponse = await StatusMedia(mediaId);
 				while(statusApiResponse.ApiStatus == ApiStatusCode.NotDone)
 				{
-					var secondsToWait = int.Parse(statusApiResponse.Description);
+					var secondsToWait = int.Parse(statusApiResponse.Data);
 					await Task.Delay(secondsToWait * 1000);
 					Logger($"Wait {secondsToWait} seconds.");
 					statusApiResponse = await StatusMedia(mediaId);
@@ -536,13 +546,13 @@ namespace NSTwitterApi
 			if(response.StatusCode == HttpStatusCode.OK)
 			{
 				apiResult.HttpStatusCode = HttpStatusCode.OK;
-				apiResult.Description = responseText;
+				apiResult.Data = responseText;
 				apiResult.ApiStatus = ApiStatusCode.Ok;
 			}
 			else
 			{
 				apiResult.HttpStatusCode = response.StatusCode;
-				apiResult.Description = "Message sent failed";
+				apiResult.Data = "Message sent failed";
 				apiResult.ApiStatus = ApiStatusCode.Failed;
 			}
 
@@ -581,7 +591,7 @@ namespace NSTwitterApi
 
 				if (csrf == null)
 				{
-					apiResponse.Description = "auth_token is not known.";
+					apiResponse.Data = "auth_token is not known.";
 					apiResponse.ApiStatus = ApiStatusCode.AuthFailed;
 
 					return apiResponse;
@@ -591,7 +601,7 @@ namespace NSTwitterApi
 
 				CSRFToken = csrf.Value;
 				apiResponse.ApiStatus = ApiStatusCode.Ok;
-				apiResponse.Description = "CSRF generated.";
+				apiResponse.Data = "CSRF generated.";
 
 				Logger("CSRF generated.");
 
@@ -604,25 +614,54 @@ namespace NSTwitterApi
 			ScreenName = await FindScreenName();
 
 			InitializeAsAPI();
-			var restId = await GetRestId();
+			var restId = await GetRestId(ScreenName);
 			if(restId.ApiStatus != ApiStatusCode.Ok)
 			{
 				apiResponse.ApiStatus = ApiStatusCode.Failed;
-				apiResponse.Description = "Could not retrieve rest_id.";
+				apiResponse.Data = "Could not retrieve rest_id.";
 				_loggedIn = false;
 				return apiResponse;
 			}
 
-			RestId = restId.Description!;
+			RestId = restId.Data!;
 			
 			apiResponse.HttpStatusCode = HttpStatusCode.OK;
 			_loggedIn = true;
 			HandleNotification(this, null);
 			return apiResponse;
 		}
-		private async Task<APIResponse> GetRestId()
+
+		/// <summary>
+		/// Resolves the rest id to the corresponding screen name
+		/// </summary>
+		/// <param name="restId"></param>
+		/// <returns>Null if user is found otherwise null</returns>
+		public async Task<string> ResolveRestId(string restId)
 		{
-			string api = $"/i/api/graphql/G3KGOASz96M-Qu0nwmGXNg/UserByScreenName?variables=%7B%22screen_name%22%3A%22{ScreenName}%22%2C%22withSafetyModeUserFields%22%3Atrue%7D&features=%7B%22hidden_profile_likes_enabled%22%3Atrue%2C%22hidden_profile_subscriptions_enabled%22%3Atrue%2C%22responsive_web_graphql_exclude_directive_enabled%22%3Atrue%2C%22verified_phone_label_enabled%22%3Afalse%2C%22subscriptions_verification_info_is_identity_verified_enabled%22%3Atrue%2C%22subscriptions_verification_info_verified_since_enabled%22%3Atrue%2C%22highlights_tweets_tab_ui_enabled%22%3Atrue%2C%22creator_subscriptions_tweet_preview_api_enabled%22%3Atrue%2C%22responsive_web_graphql_skip_user_profile_image_extensions_enabled%22%3Afalse%2C%22responsive_web_graphql_timeline_navigation_enabled%22%3Atrue%7D&fieldToggles=%7B%22withAuxiliaryUserLabels%22%3Afalse%7D";
+			string api = $"https://api.twitter.com/1.1/users/show.json?user_id={restId}";
+			var response = await _client.GetAsync(api);
+			var content = await response.Content.ReadAsStringAsync();
+			var root = JsonNode.Parse(content);
+			return root["screen_name"].GetValue<string>();
+		}
+
+
+		/// <summary>
+		/// Resolves the screename to the corresponding rest id
+		/// </summary>
+		/// <param name="screenName"></param>
+		/// <returns>Null if user is found otherwise null</returns>
+		public async Task<string?> ResolveScreenName(string screenName)
+		{
+			var apiResult = await GetRestId(screenName);
+			if (apiResult.ApiStatus != ApiStatusCode.Ok)
+				return null;
+			return apiResult.Data;
+		}
+
+		private async Task<APIResponse> GetRestId(string screenName)
+		{
+			string api = $"/i/api/graphql/G3KGOASz96M-Qu0nwmGXNg/UserByScreenName?variables=%7B%22screen_name%22%3A%22{screenName}%22%2C%22withSafetyModeUserFields%22%3Atrue%7D&features=%7B%22hidden_profile_likes_enabled%22%3Atrue%2C%22hidden_profile_subscriptions_enabled%22%3Atrue%2C%22responsive_web_graphql_exclude_directive_enabled%22%3Atrue%2C%22verified_phone_label_enabled%22%3Afalse%2C%22subscriptions_verification_info_is_identity_verified_enabled%22%3Atrue%2C%22subscriptions_verification_info_verified_since_enabled%22%3Atrue%2C%22highlights_tweets_tab_ui_enabled%22%3Atrue%2C%22creator_subscriptions_tweet_preview_api_enabled%22%3Atrue%2C%22responsive_web_graphql_skip_user_profile_image_extensions_enabled%22%3Afalse%2C%22responsive_web_graphql_timeline_navigation_enabled%22%3Atrue%7D&fieldToggles=%7B%22withAuxiliaryUserLabels%22%3Afalse%7D";
 
 			SetTransactionId();
 
@@ -638,22 +677,31 @@ namespace NSTwitterApi
 				if (errorNode.ApiStatus == ApiStatusCode.Failed)
 				{
 					apiResponse.ApiStatus = ApiStatusCode.Failed;
-					apiResponse.Description = errorNode.Description;
-					Logger($"[ERROR] {errorNode.Description}");
+					apiResponse.Data = errorNode.Data;
+					Logger($"[ERROR] {errorNode.Data}");
 					return apiResponse;
 				}
 
-				var typeName = root["data"]["user"]["result"]["__typename"];
+				var dataUser = root["data"]["user"];
+
+				if(dataUser == null)
+				{
+					apiResponse.ApiStatus = ApiStatusCode.Failed;
+					apiResponse.Data = "User not found.";
+					return apiResponse;
+				}
+
+				var typeName = dataUser["result"]["__typename"];
 
 				if (typeName.GetValue<string>() == "UserUnavailable")
 				{
 					apiResponse.ApiStatus = ApiStatusCode.Failed;
-					apiResponse.Description = "User not found or banned.";
+					apiResponse.Data = "User banned.";
 					return apiResponse;
 				}
 
 				apiResponse.ApiStatus = ApiStatusCode.Ok;
-				apiResponse.Description = root["data"]["user"]["result"]["rest_id"].GetValue<string>();
+				apiResponse.Data = root["data"]["user"]["result"]["rest_id"].GetValue<string>();
 
 
 				return apiResponse;
@@ -663,15 +711,6 @@ namespace NSTwitterApi
 				response.Dispose();
 				stream.Dispose();
 			}
-		}
-
-		private async Task<string> ResolveScreenName(string restId)
-		{
-			string api = $"https://api.twitter.com/1.1/users/show.json?user_id={restId}";
-			var response = await _client.GetAsync(api);
-			var content = await response.Content.ReadAsStringAsync();
-			var root = JsonNode.Parse(content);
-			return root["screen_name"].GetValue<string>();
 		}
 
 		private async Task<string> FindScreenName()
@@ -708,7 +747,7 @@ namespace NSTwitterApi
 			{
 				Logger("Media initialization done.");
 				apiResponse.ApiStatus = ApiStatusCode.Ok;
-				apiResponse.Description = node["media_id_string"].GetValue<string>();
+				apiResponse.Data = node["media_id_string"].GetValue<string>();
 			}
 			else
 			{
@@ -770,7 +809,7 @@ namespace NSTwitterApi
 				apiResponse.ApiStatus = ApiStatusCode.Ok;
 				var content = await response.Content.ReadAsStreamAsync();
 				var node = JsonNode.Parse(content);
-				apiResponse.Description = node["media_id_string"].GetValue<string>();
+				apiResponse.Data = node["media_id_string"].GetValue<string>();
 				content.Dispose();
 			}
 			else
@@ -812,7 +851,7 @@ namespace NSTwitterApi
 
 					var checkAfterSecond = node["processing_info"]["check_after_secs"].GetValue<int>();
 					apiResponse.ApiStatus = ApiStatusCode.NotDone;
-					apiResponse.Description = checkAfterSecond.ToString();
+					apiResponse.Data = checkAfterSecond.ToString();
 				}
 
 				contentStream.Dispose();
@@ -935,7 +974,7 @@ namespace NSTwitterApi
 			Logger("Transaction id set.");
 		}
 
-		private static string? ExtractTweetId(JsonNode node, string? restId = null)
+		private static string? ExtractTweetId(JsonNode node, string restId, bool compareRestIds)
 		{
 			var resultNode = node["tweet_results"]["result"];
 			string? userRestId;
@@ -949,7 +988,7 @@ namespace NSTwitterApi
 				userRestId = resultNode["legacy"]["user_id_str"].GetValue<string>();
 			}
 
-			if (restId != null && userRestId != restId)
+			if (!compareRestIds && userRestId != restId)
 				return null;
 
 			var tweetRestId = resultNode["rest_id"].GetValue<string>();
@@ -961,7 +1000,7 @@ namespace NSTwitterApi
 			var time = DateTimeOffset.FromUnixTimeSeconds(epoch);
 			Logger($"The maximum count of requests have been exceeded -- the blockage will be lifted {time}.");
 			var waitingPeriodInMilliseconds = (epoch - DateTimeOffset.UtcNow.ToUnixTimeSeconds()) * 1000;
-			Logger($"Thread is waiting {waitingPeriodInMilliseconds} seconds.");
+			Logger($"Thread is waiting {(waitingPeriodInMilliseconds / 1000) / 60} minutes.");
 			await Toolkit.DelayLong(waitingPeriodInMilliseconds);
 		}
 		private static APIResponse CheckForErrors(JsonNode node)
@@ -972,7 +1011,7 @@ namespace NSTwitterApi
 			if (node.AsObject().ContainsKey("errors"))
 			{
 				result.ApiStatus = ApiStatusCode.Failed;
-				result.Description = node["errors"][0]["message"].GetValue<string>();
+				result.Data = node["errors"][0]["message"].GetValue<string>();
 			}
 
 			return result;
