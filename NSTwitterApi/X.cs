@@ -86,9 +86,10 @@ namespace NSTwitterApi
 		/// Initializes a new X-API-Client.
 		/// </summary>
 		/// <param name="auth_token">The value for auth_token can be found in your browser's cookie container.<br>The user must be logged in.</br></param>
-		public X(string auth_token, bool enableNotification = true, int notificationTimerInSeconds = 5)
+		public X(string auth_token, string ct0, bool enableNotification = true, int notificationTimerInSeconds = 5)
 		{
 			AuthToken = auth_token;
+			CSRFToken = ct0;
 
 			_notificationTimer = new Timer(TimeSpan.FromSeconds(notificationTimerInSeconds));
 			_notificationTimer.Elapsed += HandleNotification;
@@ -252,6 +253,29 @@ namespace NSTwitterApi
 			return root["total_unread_count"].GetValue<int>();
 		}
 
+		public async Task<string> ReadTweet(string tweetId)
+		{
+			var api = $"/i/api/graphql/QuBlQ6SxNAQCt6-kBiCXCQ/TweetDetail?variables=%7B%22focalTweetId%22%3A%22{tweetId}%22%2C%22with_rux_injections%22%3Afalse%2C%22rankingMode%22%3A%22Relevance%22%2C%22includePromotedContent%22%3Atrue%2C%22withCommunity%22%3Atrue%2C%22withQuickPromoteEligibilityTweetFields%22%3Atrue%2C%22withBirdwatchNotes%22%3Atrue%2C%22withVoice%22%3Atrue%7D&features=%7B%22rweb_tipjar_consumption_enabled%22%3Atrue%2C%22responsive_web_graphql_exclude_directive_enabled%22%3Atrue%2C%22verified_phone_label_enabled%22%3Afalse%2C%22creator_subscriptions_tweet_preview_api_enabled%22%3Atrue%2C%22responsive_web_graphql_timeline_navigation_enabled%22%3Atrue%2C%22responsive_web_graphql_skip_user_profile_image_extensions_enabled%22%3Afalse%2C%22communities_web_enable_tweet_community_results_fetch%22%3Atrue%2C%22c9s_tweet_anatomy_moderator_badge_enabled%22%3Atrue%2C%22articles_preview_enabled%22%3Atrue%2C%22responsive_web_edit_tweet_api_enabled%22%3Atrue%2C%22graphql_is_translatable_rweb_tweet_is_translatable_enabled%22%3Atrue%2C%22view_counts_everywhere_api_enabled%22%3Atrue%2C%22longform_notetweets_consumption_enabled%22%3Atrue%2C%22responsive_web_twitter_article_tweet_consumption_enabled%22%3Atrue%2C%22tweet_awards_web_tipping_enabled%22%3Afalse%2C%22creator_subscriptions_quote_tweet_preview_enabled%22%3Afalse%2C%22freedom_of_speech_not_reach_fetch_enabled%22%3Atrue%2C%22standardized_nudges_misinfo%22%3Atrue%2C%22tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled%22%3Atrue%2C%22rweb_video_timestamps_enabled%22%3Atrue%2C%22longform_notetweets_rich_text_read_enabled%22%3Atrue%2C%22longform_notetweets_inline_media_enabled%22%3Atrue%2C%22responsive_web_enhance_cards_enabled%22%3Afalse%7D&fieldToggles=%7B%22withArticleRichContentState%22%3Atrue%2C%22withArticlePlainText%22%3Afalse%2C%22withGrokAnalyze%22%3Afalse%2C%22withDisallowedReplyControls%22%3Afalse%7D";
+			var response = await _client.GetAsync(BaseUrl + api);
+			var content = await response.Content.ReadAsStringAsync();
+			var root = JsonNode.Parse(content);
+			var array = root["data"]["threaded_conversation_with_injections_v2"]["instructions"][0]["entries"].AsArray();
+
+			for (int i = 0; i < array.Count; i++)
+			{
+				var entryId = array[i]["entryId"];
+
+				if(entryId.GetValue<string>() != $"tweet-{tweetId}")
+				{
+					continue;
+				}
+
+				return array[i]["content"]["itemContent"]["tweet_results"]["result"]["legacy"]["full_text"].GetValue<string>();
+			}
+
+			throw new KeyNotFoundException();
+		}
+
 		/// <summary>
 		/// Deletes all specified tweet id's
 		/// </summary>
@@ -293,6 +317,11 @@ namespace NSTwitterApi
 				SetTransactionId();
 				var content = new StringContent("{\"variables\":{\"tweet_id\":\"" + index + "\"},\"queryId\":\"ZYKSe-w7KEslx3JhSIk5LA\"}", Encoding.UTF8, "application/json");
 				var response = await _client.PostAsync(BaseUrl + api, content);
+				var jsonResponse = new JsonResponse(response);
+
+				if (!await EvalResponse(jsonResponse))
+					break;
+
 				if (response.StatusCode == HttpStatusCode.OK)
 					count++;
 
@@ -582,7 +611,7 @@ namespace NSTwitterApi
 				InitializeAsAPI();
 
 				// Step 2: Send GET-Request to twitter, obtain ct0 from cookie-container
-				var response = await _client.GetAsync(BaseUrl);
+				var response = await _client.GetAsync($"{BaseUrl}/home");
 				var responseCookies = _cookieContainer.GetCookies(new Uri(BaseUrl)).Cast<Cookie>().ToList();
 
 				var csrf = responseCookies.Find(p => p.Name.Equals("ct0"));
@@ -638,11 +667,11 @@ namespace NSTwitterApi
 		/// <returns>Null if user is found otherwise null</returns>
 		public async Task<string> ResolveRestId(string restId)
 		{
-			string api = $"https://api.twitter.com/1.1/users/show.json?user_id={restId}";
-			var response = await _client.GetAsync(api);
+			string api = $"/i/api/graphql/Qw77dDjp9xCpUY-AXwt-yQ/UserByRestId?variables=%7B%22userId%22%3A%22{restId}%22%2C%22withSafetyModeUserFields%22%3Atrue%7D&features=%7B%22hidden_profile_subscriptions_enabled%22%3Atrue%2C%22rweb_tipjar_consumption_enabled%22%3Atrue%2C%22responsive_web_graphql_exclude_directive_enabled%22%3Atrue%2C%22verified_phone_label_enabled%22%3Afalse%2C%22highlights_tweets_tab_ui_enabled%22%3Atrue%2C%22responsive_web_twitter_article_notes_tab_enabled%22%3Atrue%2C%22subscriptions_feature_can_gift_premium%22%3Atrue%2C%22creator_subscriptions_tweet_preview_api_enabled%22%3Atrue%2C%22responsive_web_graphql_skip_user_profile_image_extensions_enabled%22%3Afalse%2C%22responsive_web_graphql_timeline_navigation_enabled%22%3Atrue%7D";
+			var response = await _client.GetAsync(BaseUrl + api);
 			var content = await response.Content.ReadAsStringAsync();
 			var root = JsonNode.Parse(content);
-			return root["screen_name"].GetValue<string>();
+			return root["data"]["user"]["result"]["legacy"]["screen_name"].GetValue<string>();
 		}
 
 
@@ -977,6 +1006,9 @@ namespace NSTwitterApi
 		private static string? ExtractTweetId(JsonNode node, string restId, bool compareRestIds)
 		{
 			var resultNode = node["tweet_results"]["result"];
+			if (resultNode == null)
+				return null;
+
 			string? userRestId;
 			if (resultNode["__typename"].GetValue<string>() == "TweetWithVisibilityResults")
 			{
@@ -988,7 +1020,7 @@ namespace NSTwitterApi
 				userRestId = resultNode["legacy"]["user_id_str"].GetValue<string>();
 			}
 
-			if (!compareRestIds && userRestId != restId)
+			if (compareRestIds && userRestId != restId)
 				return null;
 
 			var tweetRestId = resultNode["rest_id"].GetValue<string>();
@@ -1008,7 +1040,7 @@ namespace NSTwitterApi
 			var result = new APIResponse();
 			result.ApiStatus = ApiStatusCode.Ok;
 
-			if (node.AsObject().ContainsKey("errors"))
+			if (node.AsObject().ContainsKey("errors") && node.AsObject().Count == 1)
 			{
 				result.ApiStatus = ApiStatusCode.Failed;
 				result.Data = node["errors"][0]["message"].GetValue<string>();
